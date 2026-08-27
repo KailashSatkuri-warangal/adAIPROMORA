@@ -1,0 +1,575 @@
+// Prisma Schema for OmniMarket AI
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  ANALYST
+  VIEWER
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PRO
+  BUSINESS
+  AGENCY
+}
+
+enum ContentStatus {
+  IDEA
+  DRAFT
+  REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ChannelType {
+  SEO
+  SOCIAL
+  EMAIL
+  GOOGLE_ADS
+  META_ADS
+  CONTENT_MARKETING
+  INFLUENCER
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  X_TWITTER
+  THREADS
+  YOUTUBE
+  TIKTOK
+}
+
+model User {
+  id            String            @id @default(cuid())
+  name          String?
+  email         String            @unique
+  passwordHash  String?
+  image         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  
+  memberships   WorkspaceMember[]
+  conversations AIConversation[]
+  notifications Notification[]
+  transactions  PaymentTransaction[]
+}
+
+model Workspace {
+  id            String            @id @default(cuid())
+  name          String
+  slug          String            @unique
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  members       WorkspaceMember[]
+  brands        Brand[]
+  projects      Project[]
+  campaigns     Campaign[]
+  contents      Content[]
+  calendarItems ContentCalendarItem[]
+  socialAccounts SocialAccount[]
+  socialPosts   SocialPost[]
+  keywords      Keyword[]
+  seoAudits     SEOAudit[]
+  competitors   Competitor[]
+  contacts      Contact[]
+  contactSegments ContactSegment[]
+  emailCampaigns EmailCampaign[]
+  analyticsSnapshots AnalyticsSnapshot[]
+  analyticsEvents AnalyticsEvent[]
+  aiConversations AIConversation[]
+  aiUsages      AIUsage[]
+  subscription  Subscription?
+  automationRules AutomationRule[]
+  integrations  Integration[]
+  reports       Report[]
+  transactions  PaymentTransaction[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        Role      @default(EDITOR)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  plan              PlanTier  @default(FREE)
+  status            String    @default("active") // active, trialing, past_due, canceled
+  monthlyGenerationsLimit Int @default(50)
+  generationsUsed   Int       @default(0)
+  currentPeriodStart DateTime @default(now())
+  currentPeriodEnd   DateTime?
+  stripeCustomerId  String?
+  stripeSubscriptionId String?
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Brand {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  name            String
+  website         String?
+  industry        String?
+  businessType    String?   // B2B, B2C, D2C, Agency, Creator, SaaS
+  description     String?
+  tagline         String?
+  targetAudience  String?
+  targetPersona   String?   // Demographic + psychographic details
+  uniqueSellingProp String? // USP
+  voice           String?   // e.g. Professional, Friendly, Bold, Playful, Authoritative
+  tone            String?   // e.g. Inspiring, Concise, Direct, Empathetic
+  preferredLanguage String  @default("en")
+  colorsJson      String?   // JSON { primary: "#000", secondary: "#fff", accent: "#..." }
+  fontsJson       String?   // JSON { heading: "Inter", body: "Inter" }
+  guidelines      String?   // Brand style guide / instructions
+  logoUrl         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contents        Content[]
+  campaigns       Campaign[]
+}
+
+model Project {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  status      String      @default("active")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaigns   Campaign[]
+  contents    Content[]
+}
+
+model Campaign {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  projectId       String?
+  brandId         String?
+  name            String
+  objective       String      // Lead Gen, Brand Awareness, Sales, Traffic, SEO
+  status          String      @default("planning") // planning, active, paused, completed
+  budget          Float       @default(0)
+  spent           Float       @default(0)
+  startDate       DateTime?
+  endDate         DateTime?
+  channelsJson    String?     // Array of channels: ["SEO", "SOCIAL", "GOOGLE_ADS", "EMAIL"]
+  targetAudience  String?
+  strategyOverview String?
+  messagingPillarsJson String? // Key value props & message pillars
+  kpisJson        String?     // Target KPIs & thresholds
+  metricsJson     String?     // Impressions, clicks, leads, conversions, revenue, roi
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project         Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  brand           Brand?      @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  contents        Content[]
+  calendarItems   ContentCalendarItem[]
+  emailCampaigns  EmailCampaign[]
+}
+
+model Content {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  projectId       String?
+  campaignId      String?
+  brandId         String?
+  title           String
+  type            String          // blog, social, ad_copy, email, product_desc, landing_page
+  platform        SocialPlatform?
+  status          ContentStatus   @default(DRAFT)
+  currentVersion  Int             @default(1)
+  body            String          // Markdown or text content
+  summary         String?
+  primaryKeyword  String?
+  secondaryKeywordsJson String?
+  seoScore        Int?            // 0 - 100
+  readabilityScore Int?           // 0 - 100
+  metadataJson    String?         // Extra platform specific metadata
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  campaign        Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  brand           Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  versions        ContentVersion[]
+  calendarItem    ContentCalendarItem?
+}
+
+model ContentVersion {
+  id          String    @id @default(cuid())
+  contentId   String
+  versionNumber Int
+  title       String
+  body        String
+  changeNotes String?
+  createdAt   DateTime  @default(now())
+
+  content     Content   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+}
+
+model ContentCalendarItem {
+  id            String          @id @default(cuid())
+  workspaceId   String
+  campaignId    String?
+  contentId     String?         @unique
+  title         String
+  topic         String?
+  platform      SocialPlatform  @default(LINKEDIN)
+  contentType   String          @default("social_post") // social_post, blog_post, email, ad
+  status        ContentStatus   @default(IDEA)
+  scheduledDate DateTime
+  assignedUser  String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign      Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  content       Content?        @relation(fields: [contentId], references: [id], onDelete: SetNull)
+}
+
+model SocialAccount {
+  id          String          @id @default(cuid())
+  workspaceId String
+  platform    SocialPlatform
+  accountName String
+  handle      String?
+  avatarUrl   String?
+  followers   Int             @default(0)
+  isConnected Boolean         @default(false)
+  accessToken String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  posts       SocialPost[]
+}
+
+model SocialPost {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  socialAccountId String?
+  platform        SocialPlatform
+  caption         String
+  hashtags        String?
+  mediaUrl        String?
+  status          ContentStatus   @default(DRAFT)
+  scheduledFor    DateTime?
+  publishedAt     DateTime?
+  likes           Int             @default(0)
+  shares          Int             @default(0)
+  comments        Int             @default(0)
+  clicks          Int             @default(0)
+  impressions     Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount?  @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+}
+
+model Keyword {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  term              String
+  intent            String    // Informational, Commercial, Transactional, Navigational
+  difficulty        Int       // 0 - 100
+  estimatedVolume   Int       // Monthly searches
+  cpc               Float     // Estimated CPC
+  isAiEstimate      Boolean   @default(true)
+  currentRank       Int?
+  targetUrl         String?
+  category          String?
+  createdAt         DateTime  @default(now())
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model SEOAudit {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  targetUrl         String
+  overallScore      Int       // 0 - 100
+  technicalScore    Int
+  contentScore      Int
+  mobileScore       Int
+  performanceScore  Int
+  metaAnalysisJson  String?   // Title, description, OG tags analysis
+  headingsJson      String?   // H1, H2, H3 hierarchy
+  issuesJson        String?   // List of critical, warning, and notice issues
+  recommendationsJson String? // Actionable fixes
+  createdAt         DateTime  @default(now())
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Competitor {
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  name                String
+  domain              String
+  summary             String?
+  strengthsJson       String?   // Array of strengths
+  weaknessesJson      String?   // Array of weaknesses
+  seoOpportunitiesJson String?  // Keywords they rank for that user can target
+  socialPresenceJson  String?   // Social handles and estimated audience
+  contentStrategyJson String?   // Content themes, cadence, channels
+  battlecardJson      String?   // AI actionable "How to Outperform" strategy
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Contact {
+  id          String          @id @default(cuid())
+  workspaceId String
+  email       String
+  firstName   String?
+  lastName    String?
+  company     String?
+  tagsJson    String?         // Array of tags
+  status      String          @default("subscribed") // subscribed, unsubscribed, bounced
+  createdAt   DateTime        @default(now())
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  segments    ContactSegment[]
+}
+
+model ContactSegment {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  filterJson  String?
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts    Contact[]
+}
+
+model EmailCampaign {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  campaignId    String?
+  name          String
+  subject       String
+  previewText   String?
+  bodyHtml      String
+  status        String    @default("draft") // draft, scheduled, sent
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  recipientsCount Int     @default(0)
+  openRate      Float     @default(0)
+  clickRate     Float     @default(0)
+  bounceRate    Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign      Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
+
+model AnalyticsSnapshot {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  date          DateTime
+  period        String    @default("daily") // daily, weekly, monthly
+  isDemoData    Boolean   @default(true)
+  visitors      Int       @default(0)
+  pageViews     Int       @default(0)
+  leads         Int       @default(0)
+  conversions   Int       @default(0)
+  conversionRate Float    @default(0)
+  organicTraffic Int      @default(0)
+  socialTraffic Int       @default(0)
+  emailTraffic  Int       @default(0)
+  paidTraffic   Int       @default(0)
+  adSpend       Float     @default(0)
+  revenue       Float     @default(0)
+  roi           Float     @default(0)
+  channelBreakdownJson String? // JSON per channel metrics
+  topPagesJson  String?
+  createdAt     DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AnalyticsEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  eventType   String    // page_view, lead_captured, conversion, ad_click, email_open
+  source      String?   // organic, google_ads, meta, newsletter, direct
+  path        String?
+  value       Float?
+  metadataJson String?
+  timestamp   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AIConversation {
+  id          String      @id @default(cuid())
+  workspaceId String
+  userId      String?
+  title       String      @default("New Strategy Discussion")
+  contextType String?     // general, campaign, blog, seo, brand
+  contextId   String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  messages    AIMessage[]
+}
+
+model AIMessage {
+  id              String          @id @default(cuid())
+  conversationId  String
+  role            String          // user, assistant, system
+  content         String
+  model           String?
+  tokensUsed      Int?            @default(0)
+  metadataJson    String?         // structured JSON attachments or action recommendations
+  createdAt       DateTime        @default(now())
+
+  conversation    AIConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model AIUsage {
+  id          String    @id @default(cuid())
+  workspaceId String
+  feature     String    // assistant, blog_generator, social_post, seo_audit, ad_copy, email, competitor
+  model       String
+  promptTokens Int      @default(0)
+  completionTokens Int  @default(0)
+  totalTokens Int       @default(0)
+  costEst     Float     @default(0)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AutomationRule {
+  id          String          @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  triggerEvent String         // content.created, campaign.performance_drop, seo.audit_completed, lead.captured
+  conditionsJson String?      // Logic filtering criteria
+  actionsJson String          // Actions: e.g. ["generate_social_posts", "notify_slack", "generate_email_newsletter"]
+  isActive    Boolean         @default(true)
+  executionCount Int          @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  logs        AutomationLog[]
+}
+
+model AutomationLog {
+  id          String          @id @default(cuid())
+  ruleId      String
+  status      String          // success, failed, skipped
+  detailsJson String?
+  executedAt  DateTime        @default(now())
+
+  rule        AutomationRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+}
+
+model Integration {
+  id          String    @id @default(cuid())
+  workspaceId String
+  provider    String    // google_analytics, search_console, google_ads, meta, linkedin, mailchimp, slack
+  name        String
+  isConnected Boolean   @default(false)
+  configJson  String?   // Settings, account IDs, tracking IDs
+  lastSyncedAt DateTime?
+  status      String    @default("disconnected") // connected, disconnected, error
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  title         String
+  type          String    // monthly_summary, campaign_roi, seo_growth, social_performance
+  period        String
+  executiveSummary String
+  insightsJson  String?   // What worked, what didn't, key opportunities
+  recommendationsJson String? // Action items for next cycle
+  metricsJson   String?   // Snapshot metrics summary
+  createdAt     DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  message     String
+  type        String    @default("info") // info, success, warning, system
+  link        String?
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PaymentTransaction {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  userId          String?
+  amount          Float     // Amount in INR ₹
+  currency        String    @default("INR")
+  status          String    // SUCCESS, PENDING, FAILED
+  planTier        String    // STARTER, PRO, BUSINESS
+  gateway         String    @default("RAZORPAY")
+  orderId         String?
+  paymentId       String?
+  signature       String?
+  description     String?
+  creditsAwarded  Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
