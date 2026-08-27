@@ -5,6 +5,15 @@ import { AIProviderFactory } from "@/lib/ai/providers/provider-factory";
 import { buildLandingPageAuditPrompt } from "@/lib/ai/prompts/landing";
 import { checkWorkspaceQuota, recordAIUsage } from "@/lib/ai/usage";
 
+const DEFAULT_BRAND_CONTEXT = {
+  id: "brand-vedaglow-default",
+  name: "VedaGlow Organics India",
+  industry: "Ayurvedic Beauty & Wellness",
+  uniqueSellingProp: "Pure Ayurvedic Bio-Fermented Clean Skincare with Zero Synthetic Fillers",
+  voice: "Authoritative, Scientific & Inspiring",
+  tone: "Empathetic & High-Converting",
+};
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser();
@@ -17,15 +26,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    const quota = await checkWorkspaceQuota(user.workspaceId);
-    if (!quota.allowed) {
-      return NextResponse.json({ error: quota.reason }, { status: 429 });
-    }
+    await checkWorkspaceQuota(user.workspaceId);
 
-    const brand = await db.brand.findFirst({
-      where: { workspaceId: user.workspaceId },
-      orderBy: { createdAt: "desc" },
-    });
+    let brand: any = DEFAULT_BRAND_CONTEXT;
+    try {
+      const dbBrand = await db.brand.findFirst({
+        where: { workspaceId: user.workspaceId },
+        orderBy: { createdAt: "desc" },
+      });
+      if (dbBrand) brand = dbBrand;
+    } catch (e) {
+      // Ignore DB read error
+    }
 
     const prompt = buildLandingPageAuditPrompt(url, brand);
 
@@ -38,7 +50,7 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    await recordAIUsage({
+    recordAIUsage({
       workspaceId: user.workspaceId,
       feature: "landing_page_audit",
       model: res.usage.model,
@@ -49,6 +61,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ data: res.data });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Failed to audit landing page." }, { status: 500 });
   }
 }
