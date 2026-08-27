@@ -11,9 +11,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email is required for session" }, { status: 400 });
     }
 
-    const cleanEmail = email.toLowerCase();
+    const cleanEmail = email.toLowerCase().trim();
+    const rawName = displayName?.trim() || cleanEmail.split("@")[0];
+    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const fallbackWorkspaceName = `${formattedName}'s Growth Workspace`;
     const fallbackWorkspaceId = "ws-" + cleanEmail.replace(/[^a-z0-9]/g, "-").slice(0, 20);
-    const fallbackUserId = uid || "user-" + cleanEmail.replace(/[^a-z0-9]/g, "-");
+    const fallbackUserId = uid || "usr-" + cleanEmail.replace(/[^a-z0-9]/g, "-");
 
     try {
       // Find or create user in database
@@ -32,7 +35,7 @@ export async function POST(req: NextRequest) {
         user = await db.user.create({
           data: {
             email: cleanEmail,
-            name: displayName || cleanEmail.split("@")[0],
+            name: formattedName,
             image: photoURL,
           },
           include: {
@@ -45,12 +48,11 @@ export async function POST(req: NextRequest) {
         });
 
         // Provision initial workspace and brand
-        const workspaceName = `${user.name || "My"}'s Growth Workspace`;
-        const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 10000);
+        const slug = fallbackWorkspaceName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 10000);
 
         const workspace = await db.workspace.create({
           data: {
-            name: workspaceName,
+            name: fallbackWorkspaceName,
             slug,
             members: {
               create: {
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
             },
             brands: {
               create: {
-                name: `${user.name || "My"} Brand`,
+                name: `${formattedName} Brand`,
                 voice: "Professional & Strategic",
                 tone: "Direct & High-Converting",
                 uniqueSellingProp: "AI-Powered Omnichannel Marketing",
@@ -76,17 +78,23 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        await createSession(user.id, workspace.id);
+        await createSession(user.id, workspace.id, {
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          workspaceName: workspace.name,
+          role: "OWNER",
+        });
+
         return NextResponse.json({ success: true, user, isNew: true });
       }
 
       if (user.memberships.length === 0) {
-        const workspaceName = `${user.name || "My"}'s Growth Workspace`;
-        const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 10000);
+        const slug = fallbackWorkspaceName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 10000);
 
         const workspace = await db.workspace.create({
           data: {
-            name: workspaceName,
+            name: fallbackWorkspaceName,
             slug,
             members: {
               create: {
@@ -104,20 +112,44 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        await createSession(user.id, workspace.id);
+        await createSession(user.id, workspace.id, {
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          workspaceName: workspace.name,
+          role: "OWNER",
+        });
+
         return NextResponse.json({ success: true, user, isNew: false });
       }
 
-      const activeWorkspaceId = user.memberships[0].workspaceId;
-      await createSession(user.id, activeWorkspaceId);
+      const primaryMembership = user.memberships[0];
+      const activeWorkspaceId = primaryMembership.workspaceId;
+      const activeWorkspaceName = primaryMembership.workspace?.name || fallbackWorkspaceName;
+      const activeRole = primaryMembership.role || "OWNER";
+
+      await createSession(user.id, activeWorkspaceId, {
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        workspaceName: activeWorkspaceName,
+        role: activeRole,
+      });
 
       return NextResponse.json({ success: true, user, isNew: false });
     } catch (dbErr) {
       // Fallback if SQLite file cannot be opened on Vercel
-      await createSession(fallbackUserId, fallbackWorkspaceId);
+      await createSession(fallbackUserId, fallbackWorkspaceId, {
+        name: formattedName,
+        email: cleanEmail,
+        image: photoURL,
+        workspaceName: fallbackWorkspaceName,
+        role: "OWNER",
+      });
+
       return NextResponse.json({
         success: true,
-        user: { id: fallbackUserId, email: cleanEmail, name: displayName || cleanEmail.split("@")[0], image: photoURL },
+        user: { id: fallbackUserId, email: cleanEmail, name: formattedName, image: photoURL },
         isNew: false,
       });
     }

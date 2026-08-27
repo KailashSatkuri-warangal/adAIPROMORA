@@ -1,4 +1,5 @@
 import * as React from "react";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
@@ -10,10 +11,14 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
-  const workspaceId = user?.workspaceId;
+  if (!user) {
+    redirect("/login");
+  }
+
+  const workspaceId = user.workspaceId;
 
   let brandName = "VedaGlow Organics India";
-  let workspaceName = user?.workspaceName || "AIPROMORA Labs India";
+  let workspaceName = user.workspaceName || `${user.name || "My"}'s Workspace`;
   let generationsUsed = 148;
   let generationsLimit = 1000;
 
@@ -50,10 +55,10 @@ export default async function DashboardLayout({
       <div className="pl-64 flex min-h-screen flex-col">
         <DashboardHeader
           user={{
-            name: user?.name || "Satkuri Kailash",
-            email: user?.email || "kailash@aipromora.in",
-            image: user?.image,
-            role: user?.role || "OWNER",
+            name: user.name,
+            email: user.email,
+            image: user.image,
+            role: user.role || "OWNER",
           }}
           workspaceName={workspaceName}
           brandName={brandName}

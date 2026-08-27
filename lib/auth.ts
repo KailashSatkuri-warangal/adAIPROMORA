@@ -13,25 +13,22 @@ export interface SessionUser {
 
 const SESSION_COOKIE_NAME = "aipromora_session";
 
-const FALLBACK_DEFAULT_USER: SessionUser = {
-  id: "user-kailash-default",
-  name: "Satkuri Kailash",
-  email: "kailash@aipromora.in",
-  image: null,
-  workspaceId: "ws-vedaglow-default",
-  workspaceName: "VedaGlow Organics India",
-  role: "OWNER",
-};
-
 export async function getCurrentUser(): Promise<SessionUser | null> {
   try {
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
     if (!sessionToken) {
-      try {
-        let defaultUser = await db.user.findFirst({
-          where: { email: "kailash@aipromora.in" },
+      return null;
+    }
+
+    const parsed = JSON.parse(Buffer.from(sessionToken, "base64").toString("utf-8"));
+
+    // Try DB lookup if available
+    try {
+      if (parsed.userId && !parsed.userId.startsWith("usr-fallback")) {
+        const user = await db.user.findUnique({
+          where: { id: parsed.userId },
           include: {
             memberships: {
               include: {
@@ -41,71 +38,66 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
           },
         });
 
-        if (!defaultUser) {
-          defaultUser = await db.user.findFirst({
-            include: {
-              memberships: {
-                include: {
-                  workspace: true,
-                },
-              },
-            },
-          });
-        }
+        if (user && user.memberships.length > 0) {
+          const currentMembership =
+            user.memberships.find((m) => m.workspaceId === parsed.workspaceId) ||
+            user.memberships[0];
 
-        if (defaultUser && defaultUser.memberships.length > 0) {
-          const primaryMembership = defaultUser.memberships[0];
           return {
-            id: defaultUser.id,
-            name: defaultUser.name,
-            email: defaultUser.email,
-            image: defaultUser.image,
-            workspaceId: primaryMembership.workspace.id,
-            workspaceName: primaryMembership.workspace.name,
-            role: primaryMembership.role,
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            image: user.image,
+            workspaceId: currentMembership.workspace.id,
+            workspaceName: currentMembership.workspace.name,
+            role: currentMembership.role,
           };
         }
-      } catch (dbErr) {
-        // Return fallback user on Vercel if SQLite DB is initializing
-        return FALLBACK_DEFAULT_USER;
       }
-      return FALLBACK_DEFAULT_USER;
+    } catch (dbErr) {
+      // If DB read fails on Vercel, use the user data stored directly in the session token!
     }
 
-    const parsed = JSON.parse(Buffer.from(sessionToken, "base64").toString("utf-8"));
-    const user = await db.user.findUnique({
-      where: { id: parsed.userId },
-      include: {
-        memberships: {
-          include: {
-            workspace: true,
-          },
-        },
-      },
-    });
-
-    if (!user || user.memberships.length === 0) return FALLBACK_DEFAULT_USER;
-
-    const currentMembership =
-      user.memberships.find((m) => m.workspaceId === parsed.workspaceId) ||
-      user.memberships[0];
+    // Return the specific authenticated user from the session cookie
+    const cleanEmail = parsed.email || "user@example.com";
+    const userName = parsed.name || cleanEmail.split("@")[0] || "Marketer";
+    const wsName = parsed.workspaceName || `${userName}'s Workspace`;
 
     return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      workspaceId: currentMembership.workspace.id,
-      workspaceName: currentMembership.workspace.name,
-      role: currentMembership.role,
+      id: parsed.userId || `usr-${cleanEmail.replace(/[^a-z0-9]/g, "-")}`,
+      name: userName,
+      email: cleanEmail,
+      image: parsed.image || null,
+      workspaceId: parsed.workspaceId || `ws-${cleanEmail.replace(/[^a-z0-9]/g, "-").slice(0, 20)}`,
+      workspaceName: wsName,
+      role: parsed.role || "OWNER",
     };
   } catch (err) {
-    return FALLBACK_DEFAULT_USER;
+    return null;
   }
 }
 
-export async function createSession(userId: string, workspaceId: string): Promise<string> {
-  const payload = JSON.stringify({ userId, workspaceId, createdAt: Date.now() });
+export async function createSession(
+  userId: string,
+  workspaceId: string,
+  extra?: {
+    name?: string | null;
+    email?: string;
+    image?: string | null;
+    workspaceName?: string;
+    role?: string;
+  }
+): Promise<string> {
+  const payload = JSON.stringify({
+    userId,
+    workspaceId,
+    name: extra?.name ?? null,
+    email: extra?.email ?? "",
+    image: extra?.image ?? null,
+    workspaceName: extra?.workspaceName ?? "My Workspace",
+    role: extra?.role ?? "OWNER",
+    createdAt: Date.now(),
+  });
   const token = Buffer.from(payload).toString("base64");
   
   const cookieStore = await cookies();

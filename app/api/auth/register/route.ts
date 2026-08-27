@@ -12,8 +12,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
 
-    const cleanEmail = email.toLowerCase();
-    const fallbackUserId = "user-" + cleanEmail.replace(/[^a-z0-9]/g, "-");
+    const cleanEmail = email.toLowerCase().trim();
+    const rawName = name?.trim() || cleanEmail.split("@")[0];
+    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const cleanWorkspaceName = workspaceName?.trim() || `${formattedName}'s Growth Workspace`;
+    const fallbackUserId = "usr-" + cleanEmail.replace(/[^a-z0-9]/g, "-");
     const fallbackWorkspaceId = "ws-" + cleanEmail.replace(/[^a-z0-9]/g, "-").slice(0, 20);
 
     try {
@@ -28,13 +31,12 @@ export async function POST(req: NextRequest) {
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await db.user.create({
         data: {
-          name: name || cleanEmail.split("@")[0],
+          name: formattedName,
           email: cleanEmail,
           passwordHash,
         },
       });
 
-      const cleanWorkspaceName = workspaceName || `${user.name}'s Growth Team`;
       const slug = cleanWorkspaceName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 1000);
 
       const workspace = await db.workspace.create({
@@ -58,15 +60,27 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      await createSession(user.id, workspace.id);
+      await createSession(user.id, workspace.id, {
+        name: user.name,
+        email: user.email,
+        workspaceName: workspace.name,
+        role: "OWNER",
+      });
+
       return NextResponse.json({ success: true, user, workspace });
     } catch (dbErr) {
       // Fallback on Vercel if SQLite DB is in serverless transition
-      await createSession(fallbackUserId, fallbackWorkspaceId);
+      await createSession(fallbackUserId, fallbackWorkspaceId, {
+        name: formattedName,
+        email: cleanEmail,
+        workspaceName: cleanWorkspaceName,
+        role: "OWNER",
+      });
+
       return NextResponse.json({
         success: true,
-        user: { id: fallbackUserId, name: name || cleanEmail.split("@")[0], email: cleanEmail },
-        workspace: { id: fallbackWorkspaceId, name: workspaceName || "My Growth Workspace" },
+        user: { id: fallbackUserId, name: formattedName, email: cleanEmail },
+        workspace: { id: fallbackWorkspaceId, name: cleanWorkspaceName },
       });
     }
   } catch (err: any) {
