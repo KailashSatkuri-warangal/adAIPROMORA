@@ -18,18 +18,22 @@ export default async function DashboardLayout({
   let generationsLimit = 1000;
 
   if (workspaceId) {
-    const brand = await db.brand.findFirst({
-      where: { workspaceId },
-      orderBy: { createdAt: "desc" },
-    });
-    if (brand) brandName = brand.name;
+    try {
+      const brand = await db.brand.findFirst({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+      });
+      if (brand) brandName = brand.name;
 
-    const sub = await db.subscription.findUnique({
-      where: { workspaceId },
-    });
-    if (sub) {
-      generationsUsed = sub.generationsUsed;
-      generationsLimit = sub.monthlyGenerationsLimit;
+      const sub = await db.subscription.findUnique({
+        where: { workspaceId },
+      });
+      if (sub) {
+        generationsUsed = sub.generationsUsed;
+        generationsLimit = sub.monthlyGenerationsLimit;
+      }
+    } catch (e) {
+      // Fallback on Vercel SQLite serverless transition
     }
   }
 

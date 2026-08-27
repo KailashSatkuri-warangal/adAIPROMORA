@@ -26,16 +26,26 @@ export default async function SeoPage() {
   const user = await getCurrentUser();
   const workspaceId = user?.workspaceId;
 
-  const [keywords, latestAudit] = await Promise.all([
-    db.keyword.findMany({
-      where: { workspaceId },
-      orderBy: { estimatedVolume: "desc" },
-    }),
-    db.sEOAudit.findFirst({
-      where: { workspaceId },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  let keywords: any[] = [];
+  let latestAudit: any = null;
+
+  try {
+    const results = await Promise.allSettled([
+      db.keyword.findMany({
+        where: { workspaceId },
+        orderBy: { estimatedVolume: "desc" },
+      }),
+      db.sEOAudit.findFirst({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    if (results[0].status === "fulfilled") keywords = results[0].value || [];
+    if (results[1].status === "fulfilled") latestAudit = results[1].value || null;
+  } catch (e) {
+    // Ignore serverless DB errors
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">

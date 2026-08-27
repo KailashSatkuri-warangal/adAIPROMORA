@@ -32,32 +32,48 @@ export default async function DashboardPage() {
   const user = await getCurrentUser();
   const workspaceId = user?.workspaceId;
 
-  const [brand, campaigns, calendarItems, recentContents, analyticsSnapshots] = await Promise.all([
-    db.brand.findFirst({
-      where: { workspaceId },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.campaign.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: "desc" },
-      take: 4,
-    }),
-    db.contentCalendarItem.findMany({
-      where: { workspaceId },
-      orderBy: { scheduledDate: "asc" },
-      take: 5,
-    }),
-    db.content.findMany({
-      where: { workspaceId },
-      orderBy: { updatedAt: "desc" },
-      take: 4,
-    }),
-    db.analyticsSnapshot.findMany({
-      where: { workspaceId },
-      orderBy: { date: "asc" },
-      take: 14,
-    }),
-  ]);
+  let brand: any = null;
+  let campaigns: any[] = [];
+  let calendarItems: any[] = [];
+  let recentContents: any[] = [];
+  let analyticsSnapshots: any[] = [];
+
+  try {
+    const results = await Promise.allSettled([
+      db.brand.findFirst({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+      }),
+      db.campaign.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+        take: 4,
+      }),
+      db.contentCalendarItem.findMany({
+        where: { workspaceId },
+        orderBy: { scheduledDate: "asc" },
+        take: 5,
+      }),
+      db.content.findMany({
+        where: { workspaceId },
+        orderBy: { updatedAt: "desc" },
+        take: 4,
+      }),
+      db.analyticsSnapshot.findMany({
+        where: { workspaceId },
+        orderBy: { date: "asc" },
+        take: 14,
+      }),
+    ]);
+
+    if (results[0].status === "fulfilled") brand = results[0].value;
+    if (results[1].status === "fulfilled") campaigns = results[1].value || [];
+    if (results[2].status === "fulfilled") calendarItems = results[2].value || [];
+    if (results[3].status === "fulfilled") recentContents = results[3].value || [];
+    if (results[4].status === "fulfilled") analyticsSnapshots = results[4].value || [];
+  } catch (e) {
+    // Ignore serverless DB errors
+  }
 
   // Aggregate totals
   const totalVisitors = analyticsSnapshots.reduce((acc, curr) => acc + curr.visitors, 0);
